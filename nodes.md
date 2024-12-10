@@ -1,94 +1,104 @@
-# ComfyUI Nodes Documentation
+# ComfyUI Node Implementation Patterns
 
-## Core Architecture Overview
+## Node Categories By Function
 
-### Type System
-1. Base Class: `IO` (StrEnum)
-   ```python
-   class IO(StrEnum):
-       # Basic Types
-       STRING = "STRING"
-       INT = "INT"
-       FLOAT = "FLOAT"
-       BOOLEAN = "BOOLEAN"
-       
-       # Model Types
-       MODEL = "MODEL"
-       CLIP = "CLIP"
-       VAE = "VAE"
-       CLIP_VISION = "CLIP_VISION"
-       
-       # Processing Types
-       IMAGE = "IMAGE"
-       MASK = "MASK"
-       LATENT = "LATENT"
-       CONDITIONING = "CONDITIONING"
-       
-       # Special Types
-       ANY = "*"  # Universal matcher
-       NUMBER = "FLOAT,INT"  # Numeric types
-       PRIMITIVE = "STRING,FLOAT,INT,BOOLEAN"
-   ```
+### 1. Model Management Nodes
+Example: `CheckpointLoaderSimple`
+```python
+class CheckpointLoaderSimple:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": { 
+                "ckpt_name": (folder_paths.get_filename_list("checkpoints"), {
+                    "tooltip": "The name of the checkpoint (model) to load."
+                }),
+            }
+        }
+    RETURN_TYPES = ("MODEL", "CLIP", "VAE")
+    CATEGORY = "loaders"
+```
+- Loads and manages core ML models
+- Often returns multiple model components
+- Uses filesystem helpers for model discovery
 
-2. Input Type Configuration
-   ```python
-   class InputTypeOptions(TypedDict):
-       # Common Options
-       default: bool | str | float | int | list | tuple
-       tooltip: str
-       
-       # Widget Control
-       defaultInput: bool  # Default to input slot
-       forceInput: bool   # Force input slot
-       
-       # Evaluation
-       lazy: bool         # Lazy evaluation
-       rawLink: bool      # Get raw link info
-       
-       # Type-Specific Options
-       # Numbers (FLOAT/INT)
-       min: float
-       max: float
-       step: float
-       round: float      # FLOAT only
-       
-       # Strings
-       multiline: bool
-       placeholder: str
-       dynamicPrompts: bool
-   ```
+### 2. Conditioning Nodes
+Example: `ConditioningCombine`
+```python
+class ConditioningCombine:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {"required": {
+            "conditioning_1": ("CONDITIONING",),
+            "conditioning_2": ("CONDITIONING",)
+        }}
+    RETURN_TYPES = ("CONDITIONING",)
+    
+    def combine(self, conditioning_1, conditioning_2):
+        return (conditioning_1 + conditioning_2,)
+```
+- Manipulate CLIP embeddings and other conditioning data
+- Often use PyTorch operations
+- Return tuple matching RETURN_TYPES
 
-3. Node Type Interface
-   ```python
-   class InputTypeDict(TypedDict):
-       required: dict[str, tuple[IO, InputTypeOptions]]
-       optional: dict[str, tuple[IO, InputTypeOptions]]
-       hidden: HiddenInputTypeDict  # System inputs
-   ```
+### 3. VAE Processing Nodes
+Example: `VAEEncode`
+```python
+class VAEEncode:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {"required": {
+            "pixels": ("IMAGE",),
+            "vae": ("VAE",)
+        }}
+    RETURN_TYPES = ("LATENT",)
+```
+- Handle image/latent conversion
+- Work with pixel and latent space
+- Often support tiling for large images
 
-4. Hidden System Types
-   - UNIQUE_ID: Node identifier
-   - PROMPT: Complete workflow prompt
-   - EXTRA_PNGINFO: Metadata for saved images
-   - DYNPROMPT: Dynamic prompt handling
+### 4. Resource Management Nodes
+Example: `LoadLatent`
+```python
+class LoadLatent:
+    @classmethod
+    def IS_CHANGED(s, latent):
+        # File hash checking
+        return m.digest().hex()
 
-### Key Concepts
-1. Type Safety
-   - Strong typing through IO enum
-   - Type validation on node connections
-   - Support for union types (e.g., NUMBER = "FLOAT,INT")
+    @classmethod
+    def VALIDATE_INPUTS(s, latent):
+        if not folder_paths.exists_annotated_filepath(latent):
+            return "Invalid latent file: {}".format(latent)
+        return True
+```
+- Handle file I/O operations
+- Implement caching via IS_CHANGED
+- Validate inputs and paths
 
-2. UI Integration
-   - Type information drives UI widget selection
-   - Parameter constraints for input validation
-   - Tooltips and documentation support
+## Implementation Best Practices
 
-3. Advanced Features
-   - Lazy evaluation support
-   - Raw link access for node expansion
-   - Hidden inputs for system integration
+1. Return Value Pattern
+   - Always return tuples matching RETURN_TYPES
+   - Use descriptive RETURN_NAMES when helpful
+   - Consider OUTPUT_TOOLTIPS for complex outputs
 
-### Next Areas to Explore
-1. Node Base Class (ComfyNodeABC)
-2. Node Registration System
-3. Execution Flow
+2. Input Validation
+   - Use type constraints via INPUT_TYPES
+   - Implement VALIDATE_INPUTS for complex checks
+   - Add tooltips for user guidance
+
+3. Error Handling
+   - Use logging.warning for non-fatal issues
+   - Return clear error messages
+   - Validate paths and resources early
+
+4. Performance Considerations
+   - Cache expensive operations
+   - Use IS_CHANGED for file operations
+   - Consider tiled operations for large data
+
+## Next Steps
+1. Examine node execution flow
+2. Study node communication patterns
+3. Explore advanced node features
